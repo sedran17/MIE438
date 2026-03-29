@@ -60,8 +60,8 @@ all: main-build
 main-build: MIE_RobotArm.elf secondary-outputs
 
 # Tool invocations
-MIE_RobotArm.elf MIE_RobotArm.map: $(OBJS) $(USER_OBJS) C:\Users\zuriz\STM32CubeIDE\workspace_1.16.1\MIE_RobotArm\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "MIE_RobotArm.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\zuriz\STM32CubeIDE\workspace_1.16.1\MIE_RobotArm\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MIE_RobotArm.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+MIE_RobotArm.elf MIE_RobotArm.map: $(OBJS) $(USER_OBJS) C:\Users\marti\Scripts\public\MIE438\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "MIE_RobotArm.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\marti\Scripts\public\MIE438\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MIE_RobotArm.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

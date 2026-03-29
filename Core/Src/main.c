@@ -31,6 +31,20 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* --- Stirrer Configurations --- */
+// Note: These pulse limits assume your TIM12 is set to a 1 MHz clock counting to 20000 (for 50Hz / 20ms period).
+// This is typical: e.g., Prescaler = (SystemCoreClock / 1000000) - 1, Counter Period (ARR) = 20000 - 1
+#define SERVO_DOWN_PULSE 1000 // (~1.0ms pulse) Inside cup 
+#define SERVO_UP_PULSE   1500 // (~1.5ms pulse) 45 deg outside cup
+
+// If we need to toggle the motor
+#define STIR_MOTOR_ON  GPIO_PIN_SET
+#define STIR_MOTOR_OFF GPIO_PIN_RESET
+
+/* --- Stepper Motor Configurations --- */
+#define STEPS_PER_REV 200
+#define MICROSTEP_MULTIPLIER 1
+#define TOTAL_STEPS (STEPS_PER_REV * MICROSTEP_MULTIPLIER)
 
 /* USER CODE END PD */
 
@@ -52,13 +66,18 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
-
-#define STEPS_PER_REV 200
-#define MICROSTEP_MULTIPLIER 1
-#define TOTAL_STEPS (STEPS_PER_REV * MICROSTEP_MULTIPLIER)
-
+// --- Stepper Motor Functions ---
 void rotateToAngle(float angle, uint8_t clockwise);
 void rotateContinuous(uint8_t clockwise);
+
+// --- Stirrer Functions ---
+void Stirrer_Servo_Move(uint32_t pulse_width);
+void Stirrer_Motor_Set(GPIO_PinState state);
+void Stirrer_Cycle(void);
+
+// --- Powder Dispenser Functions ---
+void Dispenser_Motor_Set(uint8_t state);
+void Dispenser_Run(uint32_t duration_ms);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -97,6 +116,17 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  
+  // Start the TIM12 PWM output for the Stirrer Servo (PB15 -> TIM12_CH2)
+  extern TIM_HandleTypeDef htim12; 
+  if (HAL_TIM_PWM_Start(&htim12, TIM_CHANNEL_2) != HAL_OK)
+  {
+      // PWM starting error
+  }
+  
+  // Initialize servo out of the cup
+  Stirrer_Servo_Move(SERVO_UP_PULSE);
+  HAL_Delay(500);
 
   /* USER CODE END 2 */
 
@@ -112,6 +142,17 @@ int main(void)
 	        // Rotate 45 degrees counter-clockwise
 	        rotateToAngle(45.0, 0);
 	        HAL_Delay(2000);
+
+            // DISPENSE POWDER ---
+            // Run the dispenser motor for 2 seconds
+            // Uncomment the next line when you want to dispense powder
+            // Dispenser_Run(2000);
+            // HAL_Delay(5000); 
+
+            // STIR THE CUP ---
+            // Uncomment the next line when you want to initiate a stirring cycle
+            // Stirrer_Cycle();
+            // HAL_Delay(5000);
 
 	        //CONTINUOUS CIRCULAR MOTION
 	        // rotateContinuous(1);
@@ -241,6 +282,34 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void Stirrer_Servo_Move(uint32_t pulse_width) {
+    // Uses TIM12 Channel 2 for the servo on PB15
+    extern TIM_HandleTypeDef htim12;
+    __HAL_TIM_SET_COMPARE(&htim12, TIM_CHANNEL_2, pulse_width);
+}
+
+void Stirrer_Motor_Set(GPIO_PinState state) {
+    // Toggles the DC Motor (PB14). Ensure STR_DCM is the label for PB14 in CubeIDE
+    // Assuming CubeIDE generated STR_DCM_GPIO_Port and STR_DCM_Pin
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, state); 
+}
+
+void Stirrer_Cycle(void) {
+    // 1. Move servo into the cup
+    Stirrer_Servo_Move(SERVO_DOWN_PULSE);
+    HAL_Delay(1000); // 1 second mechanical delay to reach the fluid
+
+    // 2. Start stirring
+    Stirrer_Motor_Set(STIR_MOTOR_ON);
+    HAL_Delay(3000); // Stir for 3 seconds
+
+    // 3. Stop stirring
+    Stirrer_Motor_Set(STIR_MOTOR_OFF);
+
+    // 4. Move servo back out of the cup
+    Stirrer_Servo_Move(SERVO_UP_PULSE);
+    HAL_Delay(1000); // 1 second mechanical delay to reach home
+}
 
 void rotateToAngle(float angle, uint8_t clockwise) {
     uint32_t stepsRequired = (uint32_t)((angle / 360.0) * TOTAL_STEPS);
@@ -277,6 +346,22 @@ void rotateContinuous(uint8_t clockwise) {
         HAL_Delay(1);
     }
 }
+
+// --- Powder Dispenser Functions ---
+void Dispenser_Motor_Set(uint8_t state) {
+    if (state) {
+        HAL_GPIO_WritePin(DCP_DSM_GPIO_Port, DCP_DSM_Pin, GPIO_PIN_SET);
+    } else {
+        HAL_GPIO_WritePin(DCP_DSM_GPIO_Port, DCP_DSM_Pin, GPIO_PIN_RESET);
+    }
+}
+
+void Dispenser_Run(uint32_t duration_ms) {
+    Dispenser_Motor_Set(1);       // Turn motor ON
+    HAL_Delay(duration_ms);       // Wait for the requested time
+    Dispenser_Motor_Set(0);       // Turn motor OFF
+}
+
 /* USER CODE END 4 */
 
 /**
