@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdbool.h>
+#include <math.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -46,6 +48,11 @@
 #define MICROSTEP_MULTIPLIER 1
 #define TOTAL_STEPS (STEPS_PER_REV * MICROSTEP_MULTIPLIER)
 
+
+//Define bounds for kettle hystersis
+#define LOWER_BOUND 75.0
+#define UPPER_BOUND 85.0
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -57,6 +64,8 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+uint32_t temp = 0;
+bool kettle_status = false;
 
 /* USER CODE END PV */
 
@@ -117,6 +126,7 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   
+  //MARTIN CODE
   // Start the TIM12 PWM output for the Stirrer Servo (PB15 -> TIM12_CH2)
   extern TIM_HandleTypeDef htim12; 
   if (HAL_TIM_PWM_Start(&htim12, TIM_CHANNEL_2) != HAL_OK)
@@ -156,6 +166,23 @@ int main(void)
 
 	        //CONTINUOUS CIRCULAR MOTION
 	        // rotateContinuous(1);
+
+	        //KETTLE LOOP CODE
+	        //find current temp
+	        float curr_temp = temp_sensor();
+
+	        //Control Loop
+	        if(curr_temp < LOWER_BOUND && kettle_status != true){
+	            //Kettle On
+	            kettle_status = true;
+	            servo_kettle(kettle_status);
+	        }else if(curr_temp > UPPER_BOUND && kettle_status != false){
+	            //Kettle Off
+	            kettle_status = false;
+	            servo_kettle(kettle_status);
+	        }
+	        sleep(2);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -282,6 +309,7 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+//MARTIN CODE
 void Stirrer_Servo_Move(uint32_t pulse_width) {
     // Uses TIM12 Channel 2 for the servo on PB15
     extern TIM_HandleTypeDef htim12;
@@ -360,6 +388,60 @@ void Dispenser_Run(uint32_t duration_ms) {
     Dispenser_Motor_Set(1);       // Turn motor ON
     HAL_Delay(duration_ms);       // Wait for the requested time
     Dispenser_Motor_Set(0);       // Turn motor OFF
+}
+
+//SAMANTHA CODE
+/*Alternate servo code
+ * void Set_Servo_Angle(TIM_HandleTypeDef *htim, uint32_t channel, uint8_t angle){
+	//0 degree -> 210 counts
+    //180 -> 1050 counts
+    uint32_t pulse_length= 210 + (angle*(1050-210)/180);
+    __HAL_TIM_SET_COMPARE(htim, channel, pulse_length);
+}*/
+
+//TURN KETTLE ON AND OFF
+void servo_kettle(bool status){
+    if(status){
+    	rotateToAngle(0, true); //values need to be adjusted depending on servo
+    }else{
+    	rotateToAngle(90, false);
+    }
+}
+
+//TEA DISPENSER SERVO CODE
+void dispense_tea(){
+    //currently in initial position then moves to this new one
+	rotateToAngle(90, true);
+    sleep(5);
+    //back to initial position
+    rotateToAngle(0, false);
+}
+
+//TEMPERATURE SENSOR
+float temp_sensor(){
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 20);
+    temp = HALADC_GetValue(&hadc);
+    HAL_ADC_Stop(&hadc1);
+
+    // --- Convert ADC to voltage ---
+    float voltage = (3.3f * temp) / 4095.0f;
+
+    // --- Known resistor value ---
+    float R_fixed = 10000.0f; // 10kΩ
+
+    // --- Calculate thermistor resistance ---
+    float R_thermistor = R_fixed * ((3.3f / voltage) - 1.0f);
+
+    // --- Steinhart-Hart (Beta equation) ---
+    float Beta = 3950.0f;
+    float T0 = 298.15f;      // 25°C in Kelvin
+    float R0 = 10000.0f;     // 10k at 25°C
+
+    float tempK = 1.0f / ( (1.0f/T0) + (1.0f/Beta) * log(R_thermistor / R0) );
+    float tempC = tempK - 273.15f;
+
+    return tempC;
 }
 
 /* USER CODE END 4 */
