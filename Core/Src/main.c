@@ -54,19 +54,31 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+TIM_HandleTypeDef htim12;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+const uint8_t step_sequence[4][4] = {
+  {1, 0, 1, 0}, // Step 0: Coil A Forward, Coil B Forward
+  {0, 1, 1, 0}, // Step 1: Coil A Reverse, Coil B Forward
+  {0, 1, 0, 1}, // Step 2: Coil A Reverse, Coil B Reverse
+  {1, 0, 0, 1}  // Step 3: Coil A Forward, Coil B Reverse
+};
 
+int8_t current_step_index = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_TIM12_Init(void);
 /* USER CODE BEGIN PFP */
 
 // --- Stepper Motor Functions ---
+void setMotorPins(uint8_t step);
+void takeSingleStep(uint8_t clockwise);
 void rotateToAngle(float angle, uint8_t clockwise);
 void rotateContinuous(uint8_t clockwise);
 
@@ -115,6 +127,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_TIM12_Init();
   /* USER CODE BEGIN 2 */
   
   // Start the TIM12 PWM output for the Stirrer Servo (PB15 -> TIM12_CH2)
@@ -136,11 +149,11 @@ int main(void)
   {
 	  //ROTATE TO A SPECIFIC ANGLE ---
 	        // Rotate 90 degrees clockwise
-	        rotateToAngle(90.0, 1);
+	        //rotateToAngle(90.0, 1);
 	        HAL_Delay(2000); // Stop 2 seconds
 
 	        // Rotate 45 degrees counter-clockwise
-	        rotateToAngle(45.0, 0);
+	        //rotateToAngle(45.0, 0);
 	        HAL_Delay(2000);
 
             // DISPENSE POWDER ---
@@ -159,6 +172,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	        takeSingleStep(1);
+	        HAL_Delay(5);
+
   }
   /* USER CODE END 3 */
 }
@@ -208,6 +224,48 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief TIM12 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM12_Init(void)
+{
+
+  /* USER CODE BEGIN TIM12_Init 0 */
+
+  /* USER CODE END TIM12_Init 0 */
+
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM12_Init 1 */
+
+  /* USER CODE END TIM12_Init 1 */
+  htim12.Instance = TIM12;
+  htim12.Init.Prescaler = 84 - 1;
+  htim12.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim12.Init.Period = 20000 - 1;
+  htim12.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim12.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim12) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim12, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM12_Init 2 */
+
+  /* USER CODE END TIM12_Init 2 */
+  HAL_TIM_MspPostInit(&htim12);
+
 }
 
 /**
@@ -261,7 +319,11 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LD2_Pin|DIR_PIN_Pin|STEP_PIN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|COIL_IN3_Pin|COIL_IN4_Pin|COIL_IN2_Pin
+                          |COIL_IN1_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, DSP_DCM_Pin|STR_DCM_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -269,14 +331,23 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LD2_Pin DIR_PIN_Pin STEP_PIN_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin|DIR_PIN_Pin|STEP_PIN_Pin;
+  /*Configure GPIO pins : LD2_Pin COIL_IN3_Pin COIL_IN4_Pin COIL_IN2_Pin
+                           COIL_IN1_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin|COIL_IN3_Pin|COIL_IN4_Pin|COIL_IN2_Pin
+                          |COIL_IN1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-/* USER CODE BEGIN MX_GPIO_Init_2 */
+  /*Configure GPIO pins : DSP_DCM_Pin STR_DCM_Pin */
+  GPIO_InitStruct.Pin = DSP_DCM_Pin|STR_DCM_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+/*  BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
@@ -311,48 +382,12 @@ void Stirrer_Cycle(void) {
     HAL_Delay(1000); // 1 second mechanical delay to reach home
 }
 
-void rotateToAngle(float angle, uint8_t clockwise) {
-    uint32_t stepsRequired = (uint32_t)((angle / 360.0) * TOTAL_STEPS);
-
-    // Set direction pin
-    if (clockwise) {
-        HAL_GPIO_WritePin(DIR_PIN_GPIO_Port, DIR_PIN_Pin, GPIO_PIN_SET);
-    } else {
-        HAL_GPIO_WritePin(DIR_PIN_GPIO_Port, DIR_PIN_Pin, GPIO_PIN_RESET);
-    }
-
-    // Generate step pulses
-    for (uint32_t i = 0; i < stepsRequired; i++) {
-        HAL_GPIO_WritePin(STEP_PIN_GPIO_Port, STEP_PIN_Pin, GPIO_PIN_SET);
-        HAL_Delay(1); // 1ms delay (adjust later for speed)
-        HAL_GPIO_WritePin(STEP_PIN_GPIO_Port, STEP_PIN_Pin, GPIO_PIN_RESET);
-        HAL_Delay(1);
-    }
-}
-
-void rotateContinuous(uint8_t clockwise) {
-    // Set direction pin
-    if (clockwise) {
-        HAL_GPIO_WritePin(DIR_PIN_GPIO_Port, DIR_PIN_Pin, GPIO_PIN_SET);
-    } else {
-        HAL_GPIO_WritePin(DIR_PIN_GPIO_Port, DIR_PIN_Pin, GPIO_PIN_RESET);
-    }
-
-    // Infinite stepping loop
-    while (1) {
-        HAL_GPIO_WritePin(STEP_PIN_GPIO_Port, STEP_PIN_Pin, GPIO_PIN_SET);
-        HAL_Delay(1);
-        HAL_GPIO_WritePin(STEP_PIN_GPIO_Port, STEP_PIN_Pin, GPIO_PIN_RESET);
-        HAL_Delay(1);
-    }
-}
-
 // --- Powder Dispenser Functions ---
 void Dispenser_Motor_Set(uint8_t state) {
     if (state) {
-        HAL_GPIO_WritePin(DCP_DSM_GPIO_Port, DCP_DSM_Pin, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(DSP_DCM_GPIO_Port, DSP_DCM_Pin, GPIO_PIN_SET);
     } else {
-        HAL_GPIO_WritePin(DCP_DSM_GPIO_Port, DCP_DSM_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(DSP_DCM_GPIO_Port, DSP_DCM_Pin, GPIO_PIN_RESET);
     }
 }
 
@@ -361,6 +396,52 @@ void Dispenser_Run(uint32_t duration_ms) {
     HAL_Delay(duration_ms);       // Wait for the requested time
     Dispenser_Motor_Set(0);       // Turn motor OFF
 }
+
+//Stepper Motor
+
+
+
+void setMotorPins(uint8_t step) {
+    HAL_GPIO_WritePin(COIL_IN1_GPIO_Port, COIL_IN1_Pin, step_sequence[step][0] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(COIL_IN2_GPIO_Port, COIL_IN2_Pin, step_sequence[step][1] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(COIL_IN3_GPIO_Port, COIL_IN3_Pin, step_sequence[step][2] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(COIL_IN4_GPIO_Port, COIL_IN4_Pin, step_sequence[step][3] ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+void takeSingleStep(uint8_t clockwise) {
+    if (clockwise) {
+        current_step_index++;
+        if (current_step_index > 3) current_step_index = 0; // Wrap around to the start
+    } else {
+        current_step_index--;
+        if (current_step_index < 0) current_step_index = 3; // Wrap around to the end
+    }
+
+    setMotorPins(current_step_index);
+}
+
+void rotateToAngle(float angle, uint8_t clockwise) {
+    uint32_t stepsRequired = (uint32_t)((angle / 360.0) * TOTAL_STEPS);
+
+    for (uint32_t i = 0; i < stepsRequired; i++) {
+        takeSingleStep(clockwise);
+
+        HAL_Delay(5);
+    }
+
+    HAL_GPIO_WritePin(COIL_IN1_GPIO_Port, COIL_IN1_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(COIL_IN2_GPIO_Port, COIL_IN2_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(COIL_IN3_GPIO_Port, COIL_IN3_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(COIL_IN4_GPIO_Port, COIL_IN4_Pin, GPIO_PIN_RESET);
+}
+
+void rotateContinuous(uint8_t clockwise) {
+    while (1) {
+        takeSingleStep(clockwise);
+        HAL_Delay(5);
+    }
+}
+
 
 /* USER CODE END 4 */
 
