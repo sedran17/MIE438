@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,6 +47,11 @@
 #define MICROSTEP_MULTIPLIER 1
 #define TOTAL_STEPS (STEPS_PER_REV * MICROSTEP_MULTIPLIER)
 
+
+/* ---- Kettle bounds --- */
+#define LOWER_BOUND 75.0
+#define UPPER_BOUND 85.0
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -54,6 +60,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 TIM_HandleTypeDef htim12;
 
 UART_HandleTypeDef huart2;
@@ -67,6 +75,11 @@ const uint8_t step_sequence[4][4] = {
 };
 
 int8_t current_step_index = 0;
+
+uint32_t temp = 0;
+bool kettle_status = false;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,6 +87,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM12_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 // --- Stepper Motor Functions ---
@@ -94,6 +108,15 @@ void Dispenser_Run(uint32_t duration_ms);
 // --- Pump Functions ---
 void Pump_Motor_Set(uint8_t state);
 void Pump_Run(uint32_t duration_ms);
+
+
+// --- Kettle Functions ---
+void servo_kettle(bool status);
+float temp_sensor(void);
+
+// --- Tea bag ---
+void dispense_tea(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -132,6 +155,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM12_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   
   // Start the TIM12 PWM output for the Stirrer Servo (PB15 -> TIM12_CH2)
@@ -231,6 +255,58 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
   * @brief TIM12 Initialization Function
   * @param None
   * @retval None
@@ -327,10 +403,10 @@ static void MX_GPIO_Init(void)
                           |COIL_IN1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, DSP_DCM_Pin|STR_DCM_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, KETTLE_Pin|DSP_DCM_Pin|STR_DCM_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(PMP_DCM_GPIO_Port, PMP_DCM_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, PMP_DCM_Pin|TEA_SERVO_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -347,19 +423,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : DSP_DCM_Pin STR_DCM_Pin */
-  GPIO_InitStruct.Pin = DSP_DCM_Pin|STR_DCM_Pin;
+  /*Configure GPIO pins : KETTLE_Pin DSP_DCM_Pin STR_DCM_Pin */
+  GPIO_InitStruct.Pin = KETTLE_Pin|DSP_DCM_Pin|STR_DCM_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PMP_DCM_Pin */
-  GPIO_InitStruct.Pin = PMP_DCM_Pin;
+  /*Configure GPIO pins : PMP_DCM_Pin TEA_SERVO_Pin */
+  GPIO_InitStruct.Pin = PMP_DCM_Pin|TEA_SERVO_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(PMP_DCM_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -471,6 +547,41 @@ void rotateContinuous(uint8_t clockwise) {
     }
 }
 
+// --- Kettle --
+
+void servo_kettle(bool status){
+    if(status){
+    	rotateToAngle(0, true); //values need to be adjusted depending on servo
+    }else{
+    	rotateToAngle(90, false);
+    }
+}
+
+float temp_sensor(){
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 20);
+    temp = HALADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+    // --- Convert ADC to voltage ---
+    float voltage = (3.3f * temp) / 4095.0f;
+
+    // --- Known resistor value ---
+    float R_fixed = 10000.0f; // 10kΩ
+
+    // --- Calculate thermistor resistance ---
+
+    float R_thermistor = R_fixed * ((3.3f / voltage) - 1.0f);
+
+    // --- Steinhart-Hart (Beta equation) ---
+    float Beta = 3950.0f;
+    float T0 = 298.15f;      // 25°C in Kelvin
+    float R0 = 10000.0f;     // 10k at 25°C
+
+    float tempK = 1.0f / ( (1.0f/T0) + (1.0f/Beta) * log(R_thermistor / R0) );
+    float tempC = tempK - 273.15f;
+
+    return tempC;
+    }
 
 /* USER CODE END 4 */
 

@@ -61,6 +61,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define B1_Pin GPIO_PIN_13
 #define B1_GPIO_Port GPIOC
+#define TEMP_SENSOR_Pin GPIO_PIN_0
+#define TEMP_SENSOR_GPIO_Port GPIOA
 #define USART_TX_Pin GPIO_PIN_2
 #define USART_TX_GPIO_Port GPIOA
 #define USART_RX_Pin GPIO_PIN_3
@@ -71,6 +73,8 @@ void Error_Handler(void);
 #define COIL_IN3_GPIO_Port GPIOA
 #define COIL_IN4_Pin GPIO_PIN_7
 #define COIL_IN4_GPIO_Port GPIOA
+#define KETTLE_Pin GPIO_PIN_1
+#define KETTLE_GPIO_Port GPIOB
 #define DSP_DCM_Pin GPIO_PIN_13
 #define DSP_DCM_GPIO_Port GPIOB
 #define STR_DCM_Pin GPIO_PIN_14
@@ -79,6 +83,8 @@ void Error_Handler(void);
 #define STR_SERVO_GPIO_Port GPIOB
 #define PMP_DCM_Pin GPIO_PIN_6
 #define PMP_DCM_GPIO_Port GPIOC
+#define TEA_SERVO_Pin GPIO_PIN_8
+#define TEA_SERVO_GPIO_Port GPIOC
 #define COIL_IN2_Pin GPIO_PIN_8
 #define COIL_IN2_GPIO_Port GPIOA
 #define COIL_IN1_Pin GPIO_PIN_9
