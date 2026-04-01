@@ -42,6 +42,11 @@
 #define STIR_MOTOR_ON  GPIO_PIN_SET
 #define STIR_MOTOR_OFF GPIO_PIN_RESET
 
+/* --- Tea servo Configurations --- */
+// Note: These pulse limits assume your TIM3 is set to a 1 MHz clock counting to 20000 (for 50Hz / 20ms period).
+#define TEA_SERVO_POSITION_0   1000 // (~1.0ms pulse) 0 degrees
+#define TEA_SERVO_POSITION_180 2000 // (~2.0ms pulse) 180 degrees
+
 /* --- Stepper Motor Configurations --- */
 #define STEPS_PER_REV 200
 #define MICROSTEP_MULTIPLIER 1
@@ -62,6 +67,7 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim12;
 
 UART_HandleTypeDef huart2;
@@ -88,13 +94,14 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM12_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 // --- Stepper Motor Functions ---
-void setMotorPins(uint8_t step);
-void takeSingleStep(uint8_t clockwise);
-void rotateToAngle(float angle, uint8_t clockwise);
-void rotateContinuous(uint8_t clockwise);
+void Stepper_Set_Pins(uint8_t step);
+void Stepper_Take_Step(uint8_t clockwise);
+void Stepper_Rotate_Angle(float angle, uint8_t clockwise);
+void Stepper_Rotate_Continuous(uint8_t clockwise);
 
 // --- Stirrer Functions ---
 void Stirrer_Servo_Move(uint32_t pulse_width);
@@ -109,13 +116,13 @@ void Dispenser_Run(uint32_t duration_ms);
 void Pump_Motor_Set(uint8_t state);
 void Pump_Run(uint32_t duration_ms);
 
-
 // --- Kettle Functions ---
-void servo_kettle(bool status);
-float temp_sensor(void);
+void Kettle_Move(bool status);
+float Temp_Sensor_Read(void);
 
 // --- Tea bag ---
-void dispense_tea(void);
+void Tea_Servo_Move(uint32_t pulse_width);
+void Tea_Dispense(void);
 
 /* USER CODE END PFP */
 
@@ -156,6 +163,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM12_Init();
   MX_ADC1_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   
   // Start the TIM12 PWM output for the Stirrer Servo (PB15 -> TIM12_CH2)
@@ -165,8 +173,19 @@ int main(void)
       // PWM starting error
   }
   
+  // Start the TIM3 PWM output for the Tea Servo (PC7 -> TIM3_CH2)
+  extern TIM_HandleTypeDef htim3;
+  if (HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2) != HAL_OK)
+  {
+      // PWM starting error
+  }
+
   // Initialize servo out of the cup
   Stirrer_Servo_Move(SERVO_UP_PULSE);
+  HAL_Delay(500);
+
+  // Initialize tea servo to 0 position
+  Tea_Servo_Move(TEA_SERVO_POSITION_0);
   HAL_Delay(500);
 
   /* USER CODE END 2 */
@@ -177,11 +196,11 @@ int main(void)
   {
 	  //ROTATE TO A SPECIFIC ANGLE ---
 	        // Rotate 90 degrees clockwise
-	        //rotateToAngle(90.0, 1);
+	        //Stepper_Rotate_Angle(90.0, 1);
 	        HAL_Delay(2000); // Stop 2 seconds
 
 	        // Rotate 45 degrees counter-clockwise
-	        //rotateToAngle(45.0, 0);
+	        //Stepper_Rotate_Angle(45.0, 0);
 	        HAL_Delay(2000);
 
             // DISPENSE POWDER ---
@@ -196,11 +215,11 @@ int main(void)
             // HAL_Delay(5000);
 
 	        //CONTINUOUS CIRCULAR MOTION
-	        // rotateContinuous(1);
+	        // Stepper_Rotate_Continuous(1);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	        takeSingleStep(1);
+	        Stepper_Take_Step(1);
 	        HAL_Delay(5);
 
   }
@@ -307,6 +326,55 @@ static void MX_ADC1_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 84 - 1;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 20000 - 1 ;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
   * @brief TIM12 Initialization Function
   * @param None
   * @retval None
@@ -406,7 +474,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOB, KETTLE_Pin|DSP_DCM_Pin|STR_DCM_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, PMP_DCM_Pin|TEA_SERVO_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(PMP_DCM_GPIO_Port, PMP_DCM_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -430,12 +498,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PMP_DCM_Pin TEA_SERVO_Pin */
-  GPIO_InitStruct.Pin = PMP_DCM_Pin|TEA_SERVO_Pin;
+  /*Configure GPIO pin : PMP_DCM_Pin */
+  GPIO_InitStruct.Pin = PMP_DCM_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(PMP_DCM_GPIO_Port, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -504,16 +572,14 @@ void Pump_Run(uint32_t duration_ms) {
 
 //Stepper Motor
 
-
-
-void setMotorPins(uint8_t step) {
+void Stepper_Set_Pins(uint8_t step) {
     HAL_GPIO_WritePin(COIL_IN1_GPIO_Port, COIL_IN1_Pin, step_sequence[step][0] ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(COIL_IN2_GPIO_Port, COIL_IN2_Pin, step_sequence[step][1] ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(COIL_IN3_GPIO_Port, COIL_IN3_Pin, step_sequence[step][2] ? GPIO_PIN_SET : GPIO_PIN_RESET);
     HAL_GPIO_WritePin(COIL_IN4_GPIO_Port, COIL_IN4_Pin, step_sequence[step][3] ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
-void takeSingleStep(uint8_t clockwise) {
+void Stepper_Take_Step(uint8_t clockwise) {
     if (clockwise) {
         current_step_index++;
         if (current_step_index > 3) current_step_index = 0; // Wrap around to the start
@@ -522,14 +588,14 @@ void takeSingleStep(uint8_t clockwise) {
         if (current_step_index < 0) current_step_index = 3; // Wrap around to the end
     }
 
-    setMotorPins(current_step_index);
+    Stepper_Set_Pins(current_step_index);
 }
 
-void rotateToAngle(float angle, uint8_t clockwise) {
+void Stepper_Rotate_Angle(float angle, uint8_t clockwise) {
     uint32_t stepsRequired = (uint32_t)((angle / 360.0) * TOTAL_STEPS);
 
     for (uint32_t i = 0; i < stepsRequired; i++) {
-        takeSingleStep(clockwise);
+        Stepper_Take_Step(clockwise);
 
         HAL_Delay(5);
     }
@@ -540,27 +606,43 @@ void rotateToAngle(float angle, uint8_t clockwise) {
     HAL_GPIO_WritePin(COIL_IN4_GPIO_Port, COIL_IN4_Pin, GPIO_PIN_RESET);
 }
 
-void rotateContinuous(uint8_t clockwise) {
+void Stepper_Rotate_Continuous(uint8_t clockwise) {
     while (1) {
-        takeSingleStep(clockwise);
+        Stepper_Take_Step(clockwise);
         HAL_Delay(5);
     }
 }
 
 // --- Kettle --
+// Note: We need to define Tea_Servo_Move and Tea_Dispense
+void Tea_Servo_Move(uint32_t pulse_width) {
+    // Uses TIM3 Channel 2 for the servo on PC7
+    extern TIM_HandleTypeDef htim3;
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pulse_width);
+}
 
-void servo_kettle(bool status){
+void Tea_Dispense(void) {
+    // 1. Move servo 180 degrees to dump tea bag
+    Tea_Servo_Move(TEA_SERVO_POSITION_180);
+    HAL_Delay(1000); // 1 second mechanical delay
+
+    // 2. Return servo to 0 degrees starting position
+    Tea_Servo_Move(TEA_SERVO_POSITION_0);
+    HAL_Delay(1000); // 1 second return delay
+}
+
+void Kettle_Move(bool status){
     if(status){
-    	rotateToAngle(0, true); //values need to be adjusted depending on servo
+    	Stepper_Rotate_Angle(90, true); // Rotate 90 degrees forward to open/turn on
     }else{
-    	rotateToAngle(90, false);
+    	Stepper_Rotate_Angle(90, false); // Rotate 90 degrees backward to close/turn off
     }
 }
 
-float temp_sensor(){
+float Temp_Sensor_Read(void){
     HAL_ADC_Start(&hadc1);
     HAL_ADC_PollForConversion(&hadc1, 20);
-    temp = HALADC_GetValue(&hadc1);
+    temp = HAL_ADC_GetValue(&hadc1);
     HAL_ADC_Stop(&hadc1);
     // --- Convert ADC to voltage ---
     float voltage = (3.3f * temp) / 4095.0f;

@@ -83,7 +83,7 @@ void Error_Handler(void);
 #define STR_SERVO_GPIO_Port GPIOB
 #define PMP_DCM_Pin GPIO_PIN_6
 #define PMP_DCM_GPIO_Port GPIOC
-#define TEA_SERVO_Pin GPIO_PIN_8
+#define TEA_SERVO_Pin GPIO_PIN_7
 #define TEA_SERVO_GPIO_Port GPIOC
 #define COIL_IN2_Pin GPIO_PIN_8
 #define COIL_IN2_GPIO_Port GPIOA
