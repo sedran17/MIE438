@@ -77,7 +77,10 @@ const uint8_t step_sequence[4][4] = {
 int8_t current_step_index = 0;
 
 uint32_t temp = 0;
-bool kettle_status = false;
+uint32_t trial = 0;
+bool kettle_status = true;
+volatile float tempC =0;
+float curr_temp;
 
 
 /* USER CODE END PV */
@@ -138,7 +141,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+   HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -178,11 +181,11 @@ int main(void)
 	  //ROTATE TO A SPECIFIC ANGLE ---
 	        // Rotate 90 degrees clockwise
 	        //rotateToAngle(90.0, 1);
-	        HAL_Delay(2000); // Stop 2 seconds
+	        //HAL_Delay(2000); // Stop 2 seconds
 
 	        // Rotate 45 degrees counter-clockwise
 	        //rotateToAngle(45.0, 0);
-	        HAL_Delay(2000);
+	        //HAL_Delay(2000);
 
             // DISPENSE POWDER ---
             // Run the dispenser motor for 2 seconds
@@ -197,11 +200,28 @@ int main(void)
 
 	        //CONTINUOUS CIRCULAR MOTION
 	        // rotateContinuous(1);
+	        curr_temp = temp_sensor();
+	        //Control Loop
+	        if(curr_temp < LOWER_BOUND && kettle_status == false){
+	  	            //Kettle On
+	  	            kettle_status = true;
+	  	            servo_kettle(kettle_status);
+	  	        }
+	        else if(curr_temp > UPPER_BOUND && kettle_status == true){
+	  	            //Kettle Off
+	  	            kettle_status = false;
+	  	            servo_kettle(kettle_status);
+	  	        }
+	        HAL_Delay(2);
     /* USER CODE END WHILE */
 
+
     /* USER CODE BEGIN 3 */
-	        takeSingleStep(1);
-	        HAL_Delay(5);
+
+
+
+
+
 
   }
   /* USER CODE END 3 */
@@ -559,18 +579,25 @@ void servo_kettle(bool status){
 
 float temp_sensor(){
     HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 20);
-    temp = HALADC_GetValue(&hadc1);
+    if (HAL_ADC_PollForConversion(&hadc1, 20) == HAL_OK) {
+            temp = HAL_ADC_GetValue(&hadc1);
+            trial = HAL_ADC_GetValue(&hadc1);
+    }
+
     HAL_ADC_Stop(&hadc1);
+    if (temp ==0){
+    	return -999.0f;
+    }
+
     // --- Convert ADC to voltage ---
-    float voltage = (3.3f * temp) / 4095.0f;
+    float voltage = temp / 4095.0f;
 
     // --- Known resistor value ---
     float R_fixed = 10000.0f; // 10kΩ
 
     // --- Calculate thermistor resistance ---
 
-    float R_thermistor = R_fixed * ((3.3f / voltage) - 1.0f);
+    float R_thermistor = R_fixed * (voltage / (1.0f - voltage));
 
     // --- Steinhart-Hart (Beta equation) ---
     float Beta = 3950.0f;
@@ -578,10 +605,13 @@ float temp_sensor(){
     float R0 = 10000.0f;     // 10k at 25°C
 
     float tempK = 1.0f / ( (1.0f/T0) + (1.0f/Beta) * log(R_thermistor / R0) );
-    float tempC = tempK - 273.15f;
+    tempC = tempK - 273.15f+ 26.0f;
+
+
 
     return tempC;
-    }
+ }
+
 
 /* USER CODE END 4 */
 
