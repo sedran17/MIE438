@@ -62,6 +62,7 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim12;
 
 UART_HandleTypeDef huart2;
@@ -91,6 +92,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM12_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 // --- Stepper Motor Functions ---
@@ -120,6 +122,9 @@ float temp_sensor(void);
 // --- Tea bag ---
 void dispense_tea(void);
 
+// --- Timer ---
+void Set_Dispenser_Speed(uint8_t speed);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -141,7 +146,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-   HAL_Init();
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -159,6 +164,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM12_Init();
   MX_ADC1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   
   // Start the TIM12 PWM output for the Stirrer Servo (PB15 -> TIM12_CH2)
@@ -171,6 +177,12 @@ int main(void)
   // Initialize servo out of the cup
   Stirrer_Servo_Move(SERVO_UP_PULSE);
   HAL_Delay(500);
+
+  extern TIM_HandleTypeDef htim12;
+    if (HAL_TIM_PWM_Start(&htim12, TIM_CHANNEL_1) != HAL_OK)
+    {
+        // PWM starting error
+    }
 
   /* USER CODE END 2 */
 
@@ -200,6 +212,7 @@ int main(void)
 
 	        //CONTINUOUS CIRCULAR MOTION
 	        // rotateContinuous(1);
+	        /*
 	        curr_temp = temp_sensor();
 	        //Control Loop
 	        if(curr_temp < LOWER_BOUND && kettle_status == false){
@@ -212,15 +225,13 @@ int main(void)
 	  	            kettle_status = false;
 	  	            servo_kettle(kettle_status);
 	  	        }
-	        HAL_Delay(2);
+	        HAL_Delay(2);*/
+	        Dispenser_Run(10000);
+		    HAL_Delay(2);
+
     /* USER CODE END WHILE */
 
-
     /* USER CODE BEGIN 3 */
-
-
-
-
 
 
   }
@@ -327,6 +338,55 @@ static void MX_ADC1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 255;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
   * @brief TIM12 Initialization Function
   * @param None
   * @retval None
@@ -357,6 +417,10 @@ static void MX_TIM12_Init(void)
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim12, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_ConfigChannel(&htim12, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
@@ -423,10 +487,10 @@ static void MX_GPIO_Init(void)
                           |COIL_IN1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, KETTLE_Pin|DSP_DCM_Pin|STR_DCM_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(STR_DCM_GPIO_Port, STR_DCM_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, PMP_DCM_Pin|TEA_SERVO_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, PMP_DCM_Pin|TEA_SERVO_Pin|KETTLE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -443,15 +507,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : KETTLE_Pin DSP_DCM_Pin STR_DCM_Pin */
-  GPIO_InitStruct.Pin = KETTLE_Pin|DSP_DCM_Pin|STR_DCM_Pin;
+  /*Configure GPIO pin : STR_DCM_Pin */
+  GPIO_InitStruct.Pin = STR_DCM_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(STR_DCM_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PMP_DCM_Pin TEA_SERVO_Pin */
-  GPIO_InitStruct.Pin = PMP_DCM_Pin|TEA_SERVO_Pin;
+  /*Configure GPIO pins : PMP_DCM_Pin TEA_SERVO_Pin KETTLE_Pin */
+  GPIO_InitStruct.Pin = PMP_DCM_Pin|TEA_SERVO_Pin|KETTLE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -475,23 +539,24 @@ void Stirrer_Motor_Set(GPIO_PinState state) {
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, state); 
 }
 
+
+
 void Stirrer_Cycle(void) {
-    // 1. Move servo into the cup
-    Stirrer_Servo_Move(SERVO_DOWN_PULSE);
-    HAL_Delay(1000); // 1 second mechanical delay to reach the fluid
+	// 1. Move servo into the cup
+	    Stirrer_Servo_Move(SERVO_DOWN_PULSE);
+	    HAL_Delay(1000); // 1 second mechanical delay to reach the fluid
 
-    // 2. Start stirring
-    Stirrer_Motor_Set(STIR_MOTOR_ON);
-    HAL_Delay(3000); // Stir for 3 seconds
+	    // 2. Start stirring
+	    Stirrer_Motor_Set(STIR_MOTOR_ON);
+	    HAL_Delay(3000); // Stir for 3 seconds
 
-    // 3. Stop stirring
-    Stirrer_Motor_Set(STIR_MOTOR_OFF);
+	    // 3. Stop stirring
+	    Stirrer_Motor_Set(STIR_MOTOR_OFF);
 
-    // 4. Move servo back out of the cup
-    Stirrer_Servo_Move(SERVO_UP_PULSE);
-    HAL_Delay(1000); // 1 second mechanical delay to reach home
+	    // 4. Move servo back out of the cup
+	    Stirrer_Servo_Move(SERVO_UP_PULSE);
+	    HAL_Delay(1000); // 1 second mechanical delay to reach home
 }
-
 // --- Powder Dispenser Functions ---
 void Dispenser_Motor_Set(uint8_t state) {
     if (state) {
@@ -499,12 +564,24 @@ void Dispenser_Motor_Set(uint8_t state) {
     } else {
         HAL_GPIO_WritePin(DSP_DCM_GPIO_Port, DSP_DCM_Pin, GPIO_PIN_RESET);
     }
+
 }
 
 void Dispenser_Run(uint32_t duration_ms) {
-    Dispenser_Motor_Set(1);       // Turn motor ON
-    HAL_Delay(duration_ms);       // Wait for the requested time
-    Dispenser_Motor_Set(0);       // Turn motor OFF
+    // 1. Fade in the dispenser motor
+    for (int i = 0; i <= 255; i++) {
+        Set_Dispenser_Speed(i);
+        HAL_Delay(5); // ~1.2 seconds to reach full speed
+    }
+
+    // 2. Run at full speed for the requested duration
+    HAL_Delay(duration_ms);
+
+    // 3. Fade out the dispenser motor
+    for (int i = 255; i >= 0; i--) {
+        Set_Dispenser_Speed(i);
+        HAL_Delay(5); // ~1.2 seconds to come to a stop
+    }
 }
 
 // --- Pump Functions ---
@@ -613,6 +690,24 @@ float temp_sensor(){
  }
 
 
+// Function to set the speed of the mixer DC motor
+void Set_Dispenser_Speed(uint8_t speed)
+{
+
+    if (speed > 255) {
+        speed = 255;
+    }
+
+
+    uint32_t mapped_ccr_value = (uint32_t)speed * 20000 / 255;
+
+    // Set the PWM duty cycle for the mixer (TIM12 Channel 1 on PB14)
+    __HAL_TIM_SET_COMPARE(&htim12, TIM_CHANNEL_1, mapped_ccr_value);
+}
+/*
+ * // Function to set the speed of the mixer DC motor
+}
+ */
 /* USER CODE END 4 */
 
 /**

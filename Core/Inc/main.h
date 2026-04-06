@@ -73,12 +73,10 @@ void Error_Handler(void);
 #define COIL_IN3_GPIO_Port GPIOA
 #define COIL_IN4_Pin GPIO_PIN_7
 #define COIL_IN4_GPIO_Port GPIOA
-#define KETTLE_Pin GPIO_PIN_1
-#define KETTLE_GPIO_Port GPIOB
-#define DSP_DCM_Pin GPIO_PIN_13
-#define DSP_DCM_GPIO_Port GPIOB
-#define STR_DCM_Pin GPIO_PIN_14
+#define STR_DCM_Pin GPIO_PIN_13
 #define STR_DCM_GPIO_Port GPIOB
+#define DSP_DCM_Pin GPIO_PIN_14
+#define DSP_DCM_GPIO_Port GPIOB
 #define STR_SERVO_Pin GPIO_PIN_15
 #define STR_SERVO_GPIO_Port GPIOB
 #define PMP_DCM_Pin GPIO_PIN_6
@@ -93,6 +91,8 @@ void Error_Handler(void);
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
+#define KETTLE_Pin GPIO_PIN_10
+#define KETTLE_GPIO_Port GPIOC
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
 
