@@ -34,34 +34,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := MIE_RobotArm
+BUILD_ARTIFACT_NAME := MIE438Screen
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-MIE_RobotArm.elf \
+MIE438Screen.elf \
 
 MAP_FILES += \
-MIE_RobotArm.map \
+MIE438Screen.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-MIE_RobotArm.list \
+MIE438Screen.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: MIE_RobotArm.elf secondary-outputs
+main-build: MIE438Screen.elf secondary-outputs
 
 # Tool invocations
-MIE_RobotArm.elf MIE_RobotArm.map: $(OBJS) $(USER_OBJS) C:\Users\marti\Scripts\public\MIE438\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "MIE_RobotArm.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\marti\Scripts\public\MIE438\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MIE_RobotArm.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+MIE438Screen.elf MIE438Screen.map: $(OBJS) $(USER_OBJS) D:\SafeToRun\MIE438Screen\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "MIE438Screen.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"D:\SafeToRun\MIE438Screen\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="MIE438Screen.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -70,14 +70,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-MIE_RobotArm.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "MIE_RobotArm.list"
+MIE438Screen.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "MIE438Screen.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) MIE_RobotArm.elf MIE_RobotArm.list MIE_RobotArm.map default.size.stdout
+	-$(RM) MIE438Screen.elf MIE438Screen.list MIE438Screen.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)
