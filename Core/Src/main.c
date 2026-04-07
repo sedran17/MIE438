@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <math.h>
+#include <stdlib.h>
 
 /* USER CODE END Includes */
 
@@ -40,8 +41,8 @@
 /* --- Stirrer Configurations --- */
 // Note: These pulse limits assume your TIM12 is set to a 1 MHz clock counting to 20000 (for 50Hz / 20ms period).
 // This is typical: e.g., Prescaler = (SystemCoreClock / 1000000) - 1, Counter Period (ARR) = 20000 - 1
-#define SERVO_DOWN_PULSE 1000 // (~1.0ms pulse) Inside cup
-#define SERVO_UP_PULSE   1500 // (~1.5ms pulse) 45 deg outside cup
+#define SERVO_DOWN_PULSE 40 // (~1.0ms pulse) Inside cup
+#define SERVO_UP_PULSE   90 // (~1.5ms pulse) 45 deg outside cup
 
 // If we need to toggle the motor
 #define STIR_MOTOR_ON  GPIO_PIN_SET
@@ -49,8 +50,8 @@
 
 /* --- Tea servo Configurations --- */
 // Note: These pulse limits assume your TIM3 is set to a 1 MHz clock counting to 20000 (for 50Hz / 20ms period).
-#define TEA_SERVO_POSITION_0   1000 // (~1.0ms pulse) 0 degrees
-#define TEA_SERVO_POSITION_180 2000 // (~2.0ms pulse) 180 degrees
+#define TEA_SERVO_POSITION_0   180 // (~1.0ms pulse) 0 degrees
+#define TEA_SERVO_POSITION_180 0 // (~2.0ms pulse) 180 degrees
 
 /* --- Stepper Motor Configurations --- */
 #define STEPS_PER_REV 200
@@ -59,30 +60,30 @@
 
 /* ---- Kettle bounds --- */
 #define LOWER_BOUND 50.0
-#define UPPER_BOUND 60.0
+#define UPPER_BOUND 70.0
 
 // --- Kettle servo ---
-#define KETTLE_UP_PULSE 1000
-#define KETTLE_DOWN_PULSE 1000
+#define KETTLE_UP_PULSE 57
+#define KETTLE_DOWN_PULSE 0
 
 // --- central stepper location angles ---
 #define POWDER_ANGLE 180
-#define STUR_ANGLE 200
-#define TEA_BAG_ANGLE 150
-#define WATER_ANGLE 300
+#define STUR_ANGLE 242
+#define TEA_BAG_ANGLE 145
+#define WATER_ANGLE 297
 #define RETURN_ANGLE_BONUS 5 // used to ensure the arm gets back to the home point
 
 // --- delay times for physical motion ---
-#define STEPPER_DELAY 150
+#define STEPPER_DELAY 80
 #define BAG_DELAY 2000
 #define STURRER_SERVO 1000
-#define STURRER_MOTOR 3000
+#define STURRER_MOTOR 6000
 #define TEA_DELAY 1000
 #define GENERAL_DELAY 1000
 
 // --- time to run each of the individual components ---
-#define POWDER_TIME 1000
-#define PUMP_DURATION 15000
+#define PUMP_DURATION 7500
+#define POWDER_TIME 7000
 
 /* USER CODE END PD */
 
@@ -97,7 +98,9 @@ ADC_HandleTypeDef hadc1;
 I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim9;
 TIM_HandleTypeDef htim12;
 
 /* USER CODE BEGIN PV */
@@ -109,6 +112,9 @@ const uint8_t step_sequence[4][4] = {
 };
 
 int8_t current_step_index = 0;
+volatile uint32_t steps_remaining = 0;
+volatile uint8_t stepper_direction = 0;
+volatile uint8_t stepper_running = 0;
 
 // For screen communication
 I2C_HandleTypeDef hi2c1;
@@ -137,7 +143,11 @@ static void MX_TIM12_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_TIM9_Init(void);
 /* USER CODE BEGIN PFP */
+
+int map_servo(int value);
 
 // --- Stepper Motor Functions ---
 void setMotorPins(uint8_t step);
@@ -145,13 +155,13 @@ void takeSingleStep(uint8_t clockwise);
 void rotateToAngle(float angle, uint8_t clockwise);
 
 // --- Stirrer Functions ---
-void Stirrer_Servo_Move(uint32_t pulse_width);
+void Stirrer_Servo_Move(uint8_t pulse_width);
 void Stirrer_Motor_Set(GPIO_PinState state);
 void Stirrer_Cycle(void);
 
 // --- Powder Dispenser Functions ---
 void Dispenser_Motor_Set(uint8_t state);
-void Dispenser_Run(uint32_t duration_ms);
+void Dispenser_Run(uint8_t pulse_width);
 
 // --- Pump Functions ---
 void Pump_Init(void);
@@ -159,15 +169,14 @@ void Pump_Motor_Set(uint8_t state);
 void Pump_Run(uint32_t duration_ms);
 
 // --- Kettle Functions ---
-void Kettle_Servo_Move(uint32_t pulse_width);
+void Kettle_Servo_Move(uint8_t pulse_width);
 void servo_kettle(uint8_t status);
 float temp_sensor(void);
 
 // --- Tea bag ---
+void Tea_Servo_Move(uint8_t pulse_width);
 void dispense_tea(void);
 
-// --- Timer ---
-void Set_Dispenser_Speed(uint8_t speed);
 
 // --- Screen functions ---
 //Screen initializations
@@ -226,9 +235,12 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM1_Init();
   MX_TIM3_Init();
+  MX_TIM2_Init();
+  MX_TIM9_Init();
   /* USER CODE BEGIN 2 */
 	// Initialize pump
 	Pump_Init();
+	Dispenser_Run(90);
 
   //initiallize screen pointers
 	struct Screen *home = NULL;
@@ -262,25 +274,24 @@ int main(void)
 	SSD1306_Update();
 
 	// Start the TIM12 PWM output for the Stirrer Servo (PB15 -> TIM12_CH2)
-	extern TIM_HandleTypeDef htim12;
-	if (HAL_TIM_PWM_Start(&htim12, TIM_CHANNEL_2) != HAL_OK)
-	{
-	  // PWM starting error
-	}
+	//extern TIM_HandleTypeDef htim12;
+	HAL_TIM_PWM_Start(&htim12, TIM_CHANNEL_2);
 
 	// Start the TIM3 PWM output for the Tea Servo (PC7 -> TIM3_CH2)
-	extern TIM_HandleTypeDef htim3;
-	if (HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2) != HAL_OK)
-	{
-	    // PWM starting error
-	}
+	//extern TIM_HandleTypeDef htim3;
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
 
 	// Start the TIM1 PWM output for the kettle Servo (PA11 -> TIM1_CH4)
-	extern TIM_HandleTypeDef htim1;
-	if (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4) != HAL_OK)
-	{
-	    // PWM starting error
-	}
+	//extern TIM_HandleTypeDef htim1;
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
+
+	// Start the TIM9 PWM output for the kettle Servo (PA3 -> TIM9_CH2)
+	//extern TIM_HandleTypeDef htim1;
+	HAL_TIM_PWM_Start(&htim9, TIM_CHANNEL_2);
+
+	// Enable timer for stepper control
+	HAL_TIM_Base_Start_IT(&htim2);
 
 	// Initialize servo out of the cup
 	Stirrer_Servo_Move(SERVO_UP_PULSE);
@@ -289,9 +300,6 @@ int main(void)
 	// Initialize tea servo to 0 position
 	Tea_Servo_Move(TEA_SERVO_POSITION_0);
 	HAL_Delay(500);
-
-	HAL_GPIO_WritePin(STR_DCM_GPIO_Port, STR_DCM_Pin, GPIO_PIN_SET);
-
 
   /* USER CODE END 2 */
 
@@ -377,6 +385,7 @@ int main(void)
 
 					  //__disable_irq(); // disable interrupts while drink is made
 					  make_coffee(order); // pass order to drink making function
+					  HAL_Delay(100);
 
 					  SSD1306_Fill(0);
 					  cur_screen = Advance_Screen(cur_screen, 1);
@@ -539,6 +548,7 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_OC_InitTypeDef sConfigOC = {0};
   TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
@@ -547,12 +557,21 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 84 - 1;
+  htim1.Init.Prescaler = 160;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 20000 - 1;
+  htim1.Init.Period = 2000;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
   {
     Error_Handler();
@@ -564,7 +583,7 @@ static void MX_TIM1_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 50;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
@@ -592,6 +611,51 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 2399;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 2200;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -603,6 +667,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_OC_InitTypeDef sConfigOC = {0};
 
@@ -610,11 +675,20 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 84 - 1;
+  htim3.Init.Prescaler = 160;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 20000 - 1;
+  htim3.Init.Period = 2000;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
@@ -626,9 +700,13 @@ static void MX_TIM3_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 50;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
@@ -637,6 +715,62 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 2 */
   HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
+  * @brief TIM9 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM9_Init(void)
+{
+
+  /* USER CODE BEGIN TIM9_Init 0 */
+
+  /* USER CODE END TIM9_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM9_Init 1 */
+
+  /* USER CODE END TIM9_Init 1 */
+  htim9.Instance = TIM9;
+  htim9.Init.Prescaler = 159;
+  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim9.Init.Period = 1999;
+  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim9, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim9, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM9_Init 2 */
+
+  /* USER CODE END TIM9_Init 2 */
+  HAL_TIM_MspPostInit(&htim9);
 
 }
 
@@ -652,23 +786,33 @@ static void MX_TIM12_Init(void)
 
   /* USER CODE END TIM12_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM12_Init 1 */
 
   /* USER CODE END TIM12_Init 1 */
   htim12.Instance = TIM12;
-  htim12.Init.Prescaler = 84 - 1;
+  htim12.Init.Prescaler = 159;
   htim12.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim12.Init.Period = 20000 - 1;
+  htim12.Init.Period = 1999;
   htim12.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim12.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim12) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim12, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_PWM_Init(&htim12) != HAL_OK)
   {
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 50;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim12, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
@@ -750,10 +894,14 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-void Stirrer_Servo_Move(uint32_t pulse_width) {
+int map_servo(int angle)
+{
+    return (1.0*(angle))/((180)*1.0) * (250-50)+50;
+}
+
+void Stirrer_Servo_Move(uint8_t pulse_width) {
     // Uses TIM12 Channel 2 for the servo on PB15
-    extern TIM_HandleTypeDef htim12;
-    __HAL_TIM_SET_COMPARE(&htim12, TIM_CHANNEL_2, pulse_width);
+	htim12.Instance->CCR2 = map_servo(pulse_width);
 }
 
 void Stirrer_Motor_Set(uint8_t state) {
@@ -789,10 +937,9 @@ void Stirrer_Cycle(void) {
  * The tea bag dispenser is a scotch yoke
  * therefore the servo just rotates 180 degrees each way
  */
-void Tea_Servo_Move(uint32_t pulse_width) {
+void Tea_Servo_Move(uint8_t pulse_width) {
     // Uses TIM3 Channel 2 for the servo on PC7
-    extern TIM_HandleTypeDef htim3;
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pulse_width);
+	htim3.Instance->CCR1 = map_servo(pulse_width);
 }
 
 void dispense_tea(void) {
@@ -805,6 +952,7 @@ void dispense_tea(void) {
     HAL_Delay(TEA_DELAY); // 1 second return delay
 }
 
+/*
 // --- Powder Dispenser Functions ---
 void Dispenser_Motor_Set(uint8_t state) {
     if (state) {
@@ -813,43 +961,17 @@ void Dispenser_Motor_Set(uint8_t state) {
         HAL_GPIO_WritePin(DSP_DCM_GPIO_Port, DSP_DCM_Pin, GPIO_PIN_RESET);
     }
 }
+*/
 
 /*
  * The powder dispenser is an archimedies screw that is fed by a hopper
  * turning the dc motor dispense powder
  * The motor is considerably more powerful than we need, thus PWM
  */
-void Dispenser_Run(uint32_t duration_ms) {
-    // 1. Fade in the dispenser motor
-    for (int i = 0; i <= 255; i++) {
-        Set_Dispenser_Speed(i);
-        HAL_Delay(5); // ~1.2 seconds to reach full speed
-    }
-
-    // 2. Run at full speed for the requested duration
-    HAL_Delay(duration_ms);
-
-    // 3. Fade out the dispenser motor
-    for (int i = 255; i >= 0; i--) {
-        Set_Dispenser_Speed(i);
-        HAL_Delay(5); // ~1.2 seconds to come to a stop
-    }
+void Dispenser_Run(uint8_t pulse_width) {
+    // Uses TIM3 Channel 2 for the powder dispense on PB14
+	htim3.Instance->CCR2 = map_servo(pulse_width);
 }
-
-// Function to set the speed of the motor
-void Set_Dispenser_Speed(uint8_t speed)
-{
-	// Bounds checking
-    if (speed > 255) {
-        speed = 255;
-    }
-
-    uint32_t mapped_ccr_value = (uint32_t)speed * 20000 / 255;
-
-    // Set the PWM duty cycle for the motor (TIM12 Channel 1 on PB14)
-    __HAL_TIM_SET_COMPARE(&htim12, TIM_CHANNEL_1, mapped_ccr_value);
-}
-
 
 //Stepper Motor
 void setMotorPins(uint8_t step) {
@@ -873,18 +995,11 @@ void takeSingleStep(uint8_t clockwise) {
 }
 
 void rotateToAngle(float angle, uint8_t clockwise) {
-    uint32_t stepsRequired = (uint32_t)((angle / 360.0) * TOTAL_STEPS); // degree scaling
+    if (stepper_running) return;
 
-    for (uint32_t i = 0; i < stepsRequired; i++) {
-        takeSingleStep(clockwise);
-
-        HAL_Delay(STEPPER_DELAY);
-    }
-
-    HAL_GPIO_WritePin(COIL_IN1_GPIO_Port, COIL_IN1_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(COIL_IN2_GPIO_Port, COIL_IN2_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(COIL_IN3_GPIO_Port, COIL_IN3_Pin, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(COIL_IN4_GPIO_Port, COIL_IN4_Pin, GPIO_PIN_RESET);
+    steps_remaining = (uint32_t)((angle / 360.0) * TOTAL_STEPS); // degree scaling
+    stepper_direction = clockwise;
+    stepper_running = 1;
 }
 
 /*
@@ -917,10 +1032,9 @@ void Pump_Run(uint32_t duration_ms) {
 }
 
 // --- Kettle functions ---
-void Kettle_Servo_Move(uint32_t pulse_width) {
+void Kettle_Servo_Move(uint8_t pulse_width) {
     // Uses TIM1 Channel 4 for the servo on PA11
-    extern TIM_HandleTypeDef htim1;
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, pulse_width);
+	htim1.Instance->CCR4 = map_servo(pulse_width);
 }
 
 void servo_kettle(uint8_t status){
@@ -1133,10 +1247,13 @@ void make_coffee(uint8_t order){
 	if((order & 0b0100) == 0b0100){ // mask for powder dispenser bit
 		// move to powder
 		rotateToAngle(POWDER_ANGLE-angle, 1);
+		while(stepper_running);
 		// track angle
 		angle = POWDER_ANGLE;
 		// dispense powder
-		Dispenser_Run(POWDER_TIME);
+		Dispenser_Run(30);
+		HAL_Delay(POWDER_TIME);
+		Dispenser_Run(90);
 	}
 	if((order & 0b0010) == 0b0010){ // mask for tea bag
 		// move to tea bag
@@ -1145,6 +1262,7 @@ void make_coffee(uint8_t order){
 		} else{
 			rotateToAngle(angle-TEA_BAG_ANGLE,0);
 		}
+		while(stepper_running);
 		// track angle
 		angle = TEA_BAG_ANGLE;
 		// dispense tea bag
@@ -1153,10 +1271,13 @@ void make_coffee(uint8_t order){
 	if((order & 0b1000) == 0b1000){ // mask for water dispensing
 		// move to water
 		rotateToAngle(WATER_ANGLE-angle,1);
+		while(stepper_running);
 		// add amount moved to angle
 		angle = WATER_ANGLE;
 		// dispense water
 		Pump_Run(PUMP_DURATION);
+		__HAL_TIM_SET_AUTORELOAD(&htim2,5000);
+
 	}
 	if((order & 0b0001) == 0b0001){ // mask for sturring
 		// move to sturrer
@@ -1165,6 +1286,7 @@ void make_coffee(uint8_t order){
 		} else{
 			rotateToAngle(angle-STUR_ANGLE,0);
 		}
+		while(stepper_running);
 		// add amount moved to angle
 		angle = STUR_ANGLE;
 		// do sturring
@@ -1172,6 +1294,8 @@ void make_coffee(uint8_t order){
 	}
 	// move back to starting point
 	rotateToAngle(angle+RETURN_ANGLE_BONUS, 0);
+	while(stepper_running);
+	__HAL_TIM_SET_AUTORELOAD(&htim2, 2200);
 }
 
 
@@ -1203,6 +1327,24 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		last_press_time[2] = now;
 		command = 0b11;
 	}
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	//if(htim->Instance == TIM2){
+		if(stepper_running && steps_remaining > 0){
+			takeSingleStep(stepper_direction);
+			steps_remaining--;
+
+			if(steps_remaining == 0){
+				stepper_running = 0;
+
+			    HAL_GPIO_WritePin(COIL_IN1_GPIO_Port, COIL_IN1_Pin, GPIO_PIN_RESET);
+			    HAL_GPIO_WritePin(COIL_IN2_GPIO_Port, COIL_IN2_Pin, GPIO_PIN_RESET);
+			    HAL_GPIO_WritePin(COIL_IN3_GPIO_Port, COIL_IN3_Pin, GPIO_PIN_RESET);
+			    HAL_GPIO_WritePin(COIL_IN4_GPIO_Port, COIL_IN4_Pin, GPIO_PIN_RESET);
+			}
+		}
+	//}
 }
 
 /* USER CODE END 4 */

@@ -67,8 +67,6 @@ void Error_Handler(void);
 #define COIL_IN4_GPIO_Port GPIOA
 #define STR_DCM_Pin GPIO_PIN_13
 #define STR_DCM_GPIO_Port GPIOB
-#define DSP_DCM_Pin GPIO_PIN_14
-#define DSP_DCM_GPIO_Port GPIOB
 #define STR_SERVO_Pin GPIO_PIN_15
 #define STR_SERVO_GPIO_Port GPIOB
 #define PMP_DCM_Pin GPIO_PIN_6
